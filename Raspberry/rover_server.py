@@ -1,4 +1,4 @@
-# rover_server.py
+# rover_server_test.py
 # Web-based rover control server with USB camera stream.
 # Run: python3 rover_server.py
 # Then open http://<pi-ip>:5000 on any device on the same network.
@@ -426,10 +426,25 @@ def video():
 
 @app.route('/status')
 def status():
-    dist = get_distance()
+    global current_action
+    dist      = get_distance()
+    too_close = dist <= OBSTACLE_THRESHOLD_M
+
+    # Enforce obstacle limit on every poll tick — if the rover is
+    # already moving forward and something enters the threshold zone,
+    # cut the motors immediately without waiting for a new /command.
+    if too_close and current_action == 'forward':
+        set_motors(0.0, 0.0)
+        current_action = 'blocked'
+
+    # Clear the blocked state automatically once the path is free again,
+    # so the driver can go forward again without re-pressing the button.
+    if not too_close and current_action == 'blocked':
+        current_action = 'stop'
+
     return jsonify(
         distance  = round(dist, 2) if dist != float('inf') else 99.0,
-        too_close = dist <= OBSTACLE_THRESHOLD_M,
+        too_close = too_close,
         mode      = DRIVE_MODE,
         action    = current_action,
         speed     = left_speed,
